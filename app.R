@@ -4,8 +4,6 @@ library(shiny)
 library(zoo)
 library(openxlsx)
 
-
-if (interactive()) {
   
   ui <- fluidPage(
 
@@ -136,5 +134,4 @@ if (interactive()) {
     
     
   }
-  shinyApp(ui, server)
-}
+shinyApp(ui, server)
