@@ -115,6 +115,20 @@ server <- function(input, output) {
       data <- data[data$søye != 'klostridiebakterier',]
       
       
+      kopplam_korrigering <- which(data$lam == '' & data$oppvekstmelding == 'Kopplam')
+      
+      for (i in 1:length(kopplam_korrigering)){
+        if (data$lam[kopplam_korrigering[i]-1] != '') {
+          data$oppvekstmelding[kopplam_korrigering[i]-1] <- 'Kopplam'
+        }
+      }
+      
+      for (i in 1:length(kopplam_korrigering)){
+        if (data$lam[kopplam_korrigering[i]-2] != '' & data$lam[kopplam_korrigering[i]-1] == '') {
+          data$oppvekstmelding[kopplam_korrigering[i]-2] <- 'Kopplam'
+        }
+      }
+      
       data$oppvekstmelding[which(data$søye == 'Fosterlam')-1] <- paste0(data$oppvekstmelding[which(data$søye == 'Fosterlam')-1], 'Fosterlam')
       data <- data[data$søye != 'Fosterlam',]
       data <- data[data$søye != 'diagnose',]
@@ -173,23 +187,24 @@ server <- function(input, output) {
       
       #length(unique(data$søye[nchar(data$søye) > 2]))- length(unique(data$søye[data$lam != ''])) # søye utmeldt og null
       
-      beskrivelse <- c('Tapt eller skadet lam av gaupe', 'Tapt eller skadet søye av gaupe', 'Tapt eller skadet totalt av gaupe',
-                       'Tapt eller skadet lam av jerv', 'Tapt eller skadet søye av jerv', 'Tapt eller skadet totalt av jerv',
-                       'Tapt eller skadet lam av ørn', 'Tapt eller skadet søye av ørn','Tapt eller skadet totalt av ørn',
-                       'Tapt eller skadet lam av rev', 'Tapt eller skadet søye av rev', 'Tapt eller skadet totalt av rev',
-                       'Tapt eller skadet lam av ukjent rovvilt', 'Tapt eller skadet søye av ukjent rovvilt','Tapt eller skadet totalt av ukjent rovvilt',
-                       'Totalt tap eller skadet av rovvilt', 'Tap eller skadet lam av ukjent årsak', 'Tap eller skadet søye av ukjent årsak',
+      beskrivelse <- c('Tapt eller skadet lam av gaupe', 'Tapt eller skadet søye av gaupe', 'Tapt eller skadet totalt av gaupe','',
+                       'Tapt eller skadet lam av jerv', 'Tapt eller skadet søye av jerv', 'Tapt eller skadet totalt av jerv','',
+                       'Tapt eller skadet lam av ørn', 'Tapt eller skadet søye av ørn','Tapt eller skadet totalt av ørn','',
+                       'Tapt eller skadet lam av rev', 'Tapt eller skadet søye av rev', 'Tapt eller skadet totalt av rev','',
+                       'Tapt eller skadet lam av ukjent rovvilt', 'Tapt eller skadet søye av ukjent rovvilt','Tapt eller skadet totalt av ukjent rovvilt','',
+                       'Totalt tap eller skadet av rovvilt', 
+                       'Tap eller skadet lam av ukjent årsak', 'Tap eller skadet søye av ukjent årsak','',
                        'Totalt tapt eller skadd av ukjent årsak', 
                        '','Antall totalt', 'Antall søyer med lam', 'Antall søyer uten lam','Antall lam', 'Antall kopplam', 'Antall fosterlam')
       
       
-      antall <- c(gaupe_lam, gaupe_søye, gaupe_totalt,
-                  jerv_lam, jerv_søye, jerv_totalt, 
-                  ørn_lam, ørn_søye, ørn_totalt, 
-                  rev_lam, rev_søye, rev_totalt, 
-                  ukjent_rovvilt_lam, ukjent_rovvilt_søye, ukjent_rovvilt_totalt,
+      antall <- c(gaupe_lam, gaupe_søye, gaupe_totalt,'',
+                  jerv_lam, jerv_søye, jerv_totalt,'',
+                  ørn_lam, ørn_søye, ørn_totalt,'',
+                  rev_lam, rev_søye, rev_totalt,'',
+                  ukjent_rovvilt_lam, ukjent_rovvilt_søye, ukjent_rovvilt_totalt,'',
                   samlet_rovvilt, 
-                  ukjent_lam, ukjent_søye, ukjent_totalt,
+                  ukjent_lam, ukjent_søye, ukjent_totalt,'',
                   '',totalt_antall, søye_med_lam, søye_uten_lam,lam, kopplam, fosterlam)
       
       stats <- data.frame(beskrivelse, antall)
