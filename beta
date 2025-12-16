@@ -2,8 +2,8 @@ library(zoo)
 
 Sys.setlocale("LC_ALL", "nb-NO.UTF-8")
 
-sak <-'2025_10896'
-fil <- paste0(sak)
+sak <-'2025-11010'
+fil <- paste0('C:/Users/krhau/OneDrive - Statsforvalteren/', sak,'.txt')
 #fil <- 'C:/Users/krhau/OneDrive - Statsforvalteren/SøyeLam Helse Utmelding Oppvekstkod.txt'
 #sak <- '2025-10896'
 
@@ -24,6 +24,13 @@ data$dato <- ''
 data$utmelding <- ''
 data$dato[grep('../../..',data$søye)] <- data$søye[grep('../../..',data$søye)]
 data$dato <- gsub(':', '', data$dato)
+
+# korrigere for bjørn
+
+data$søye[which(data$søye == 'bjørn')-1] <- paste(data$søye[which(data$søye == 'bjørn')-1],data$søye[which(data$søye == 'bjørn')])
+
+
+
 data$utmelding[grep('../../..',data$søye)] <- data$søye[grep('../../..',data$søye)+1]
 data$utmelding[grep('Foreb[.]', data$utmelding)] <- '766 - Foreb flercellede parasitter (eks rundorm)' # fjerne . i melding for å splitte på . senere
 data$tapsårsak <- ''
@@ -169,38 +176,11 @@ data$søye <- na.locf(data$søye)
 data$lam[data$lam == ''] <- NA
 data$lam <- transform(data, value = ave(lam, søye, FUN = na.locf0))$value
 
-#søye med og uten lam
-
 data$temp <- 0
 data$temp[!is.na(data$lam)] <- 1
 
-temp <- aggregate(data$temp, by = list(data$søye), mean)
-temp$x[temp$x > 0] <- 1
-colnames(temp) <- c('søye', 'mor')
-data <- merge(data, temp, by='søye')
-
-
-data$lam[is.na(data$lam)] <- ''
-
 
 ## finne de med mer enn 3 lam
-
-#temp <- aggregate(data$temp[data$lam %in%unique(data$lam)], by = list(data$søye[data$lam %in%unique(data$lam)]), sum)
-temp <-aggregate(data$temp, by = list(data$søye, data$lam), mean)
-temp <- aggregate(temp$x, by=list(temp$Group.1), sum)
-colnames(temp) <- c('søye', 'antall lam')
-data <- merge(data, temp, by = 'søye')
-
-temp <- aggregate(data$`antall lam`, by = list(data$søye), mean)
-temp <- temp[temp$x >= 3,]
-antall_lam_i_tre_pluss_kull <- sum(temp$x)
-
-# antall lam 
-lam <- length(unique(data$lam[data$lam != '']))
-kopplam <- length(unique(data$lam[data$oppvekstmelding == 'Kopplam']))
-fosterlam <- length(unique(data$lam[data$oppvekstmelding == 'Fosterlam']))
-
-totalt_antall <- lam + søyer
 
 #sum antall kopplam per søye. Beregn antall søsken av kopplam ved antall lam per søe - kopplam per søe
 data$kopplam_dummy <- 0
@@ -211,7 +191,36 @@ colnames(temp) <- c('søye', 'antall_kopplam_søye')
 
 data <- merge(data, temp, by=c('søye'))
 
-# Ettåringer - problemer med tellingen
+# antall lam
+temp <-aggregate(data$temp, by = list(data$søye, data$lam), mean)
+temp <- aggregate(temp$x, by=list(temp$Group.1), sum)
+colnames(temp) <- c('søye', 'antall lam ukorr')
+data <- merge(data, temp, by = 'søye', all.x = T)
+data$`antall lam ukorr`[is.na(data$`antall lam ukorr`)] <- 0
+
+## korrigerer antall lam for kopplam - de skal ikke telles med
+data$`antall lam` <- data$`antall lam ukorr` - data$antall_kopplam_søye
+
+
+temp <- aggregate(data$`antall lam`, by = list(data$søye), mean)
+temp <- temp[temp$x >= 3,]
+antall_lam_i_tre_pluss_kull <- sum(temp$x)
+
+#søye med og uten lam
+
+data$mor <- 0
+data$mor[data$`antall lam` > 0] <- 1
+
+data$lam[is.na(data$lam)] <- ''
+
+# antall lam 
+lam <- length(unique(data$lam[data$lam != '']))
+kopplam <- length(unique(data$lam[data$oppvekstmelding == 'Kopplam']))
+fosterlam <- length(unique(data$lam[data$oppvekstmelding == 'Fosterlam']))
+
+totalt_antall <- lam + søyer
+
+# Ettåringer
 
 data$ettåring <- 0
 data$ettåring[substr(data$søye,1,1) == as.numeric(lam_siffer) -1] <- 1
@@ -220,6 +229,11 @@ antall_ettåringer <- sum(aggregate(data$ettåring, by=list(data$søye), mean)[2
 data$lam_ettåring <- 0
 data$lam_ettåring[data$temp == 1 & data$ettåring == 1] <- 1
 antall_lam_ettåring <- sum(aggregate(data$lam_ettåring, by=list(data$søye,data$lam), mean)[3])
+
+# antall søsken kopplam
+
+antall_søsken_kopplam <- sum(data$`antall lam`[data$kopplam_dummy == 1])
+
 
 ## Kaster ut de som er slaktet for å regne ut tap
 data <- data[grep('Slaktet', data$utmelding, invert = T),]
@@ -232,20 +246,11 @@ data$sykdom[grep('Sjukdom', data$tapsårsak)] <- 1
 data$sykdom[grep('Mastitt', data$tapsårsak)] <- 1
 data$sykdom[grep('flercellede', data$tapsårsak)] <- 1
 
-sykdom_søye <- sum(data$sykdom[data$lam == '' & data$mor == 1])
-sykdom_søye_u_lam <- sum(data$sykdom[grep('0', data$mor)])
-sykdom_lam <- sum(data$sykdom[grep(lam_siffer, data$lam)])
-
 # ulykke
 
 data$ulykke <- 0
 data$ulykke[grep('Ulykke', data$tapsårsak)] <- 1
 data$ulykke[grep('tråkk', data$tapsårsak)] <- 1
-
-ulykke_søye <- sum(data$ulykke[data$lam == '' & data$mor == 1])
-ulykke_søye_u_lam <- sum(data$ulykke[grep('0', data$mor)])
-ulykke_lam <- sum(data$ulykke[grep(lam_siffer, data$lam)])
-
 
 
 # regne ut tap
@@ -267,16 +272,13 @@ data$ukjent <- 0
 data$ukjent[grep('Ukjent årsak', data$tapsårsak)] <- 1
 
 data$tapt <-  0
-data$tapt[grep('Tapt sommerbeite', data$utmelding)] <- 1
-data$tapt[grep('Tapt høstbeite', data$utmelding)] <- 1
-data$tapt[grep('Tapt vårbeite', data$utmelding)] <- 1
-
-data$ukjent <- 0
-data$ukjent[data$tapt == 1 & data$gaupe != 1 & data$jerv != 1 & data$bjørn != 1 & data$ulv != 1 & data$ørn != 1
-            & data$ulykke != 1 & data$sykdom != 1 & data$rev != 1 & data$ukjent_rovvilt != 1] <- 1
+data$tapt[grep('sommerbeite', data$utmelding)] <- 1
+data$tapt[grep('høstbeite', data$utmelding)] <- 1
+data$tapt[grep('vårbeite', data$utmelding)] <- 1
 
 data$annet <- 0
-data$annet[data$ulykke != 1 & data$sykdom != 1 & data$rev != 1 & data$ukjent != 1 & data$ukjent_rovvilt != 1] < 1
+data$annet[data$tapt == 1 & data$ulykke != 1 & data$sykdom != 1 & data$rev != 1 & data$ukjent != 1 & data$ukjent_rovvilt != 1
+           & data$gaupe != 1 & data$jerv != 1 & data$bjørn != 1 & data$ulv != 1 & data$ørn != 1 & data$rev != 1] < 1
 
 # lam tapt
 temp <- aggregate(data$gaupe, by=list(data$lam), mean)
@@ -310,6 +312,9 @@ annet_lam <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
 temp <- aggregate(data$ulykke, by=list(data$lam), mean)
 temp$x[temp$x > 0] <- 1
 ulykke_lam <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
+temp <- aggregate(data$sykdom, by=list(data$lam), mean)
+temp$x[temp$x > 0] <- 1
+sykdom_lam <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
 
 # søyer med lam tapt
 
@@ -344,6 +349,9 @@ annet_søye <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
 temp <- aggregate(data$ulykke[data$mor == 1 & data$lam == ''], by=list(data$søye[data$mor == 1 & data$lam == '']), mean)
 temp$x[temp$x > 0] <- 1
 ulykke_søye <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
+temp <- aggregate(data$sykdom[data$mor == 1 & data$lam == ''], by=list(data$søye[data$mor == 1 & data$lam == '']), mean)
+temp$x[temp$x > 0] <- 1
+sykdom_søye <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
 
 # søye u lam
 
@@ -378,10 +386,16 @@ annet_søye_u_lam <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
 temp <- aggregate(data$ulykke[data$mor == 0 & data$lam == ''], by=list(data$søye[data$mor == 0 & data$lam == '']), mean)
 temp$x[temp$x > 0] <- 1
 ulykke_søye_u_lam <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
+temp <- aggregate(data$sykdom[data$mor == 0 & data$lam == ''], by=list(data$søye[data$mor == 0 & data$lam == '']), mean)
+temp$x[temp$x > 0] <- 1
+sykdom_søye_u_lam <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
 
 # dupliserer for å regne ut tap på sommerbeite
+data$sommer <- 0
+data$sommer[grep('sommer', data$utmelding)] <- 1
 data_sommer <- data[grep('sommer', data$utmelding),]
 
+if (nrow(data_sommer) > 0){
 # lam tapt
 temp <- aggregate(data_sommer$gaupe, by=list(data_sommer$lam), mean)
 temp$x[temp$x > 0] <- 1
@@ -414,6 +428,9 @@ annet_lam_sommer <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
 temp <- aggregate(data_sommer$ulykke, by=list(data_sommer$lam), mean)
 temp$x[temp$x > 0] <- 1
 ulykke_lam_sommer <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
+temp <- aggregate(data_sommer$sykdom, by=list(data_sommer$lam), mean)
+temp$x[temp$x > 0] <- 1
+sykdom_lam_sommer <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
 
 # søyer med lam tapt
 
@@ -450,9 +467,12 @@ if (length(data_sommer$søye[data_sommer$mor == 1 & data_sommer$lam == ''])>0) {
   temp <- aggregate(data_sommer$ulykke[data_sommer$mor == 1 & data_sommer$lam == ''], by=list(data_sommer$søye[data_sommer$mor == 1 & data_sommer$lam == '']), mean)
   temp$x[temp$x > 0] <- 1
   ulykke_søye_sommer <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
-  
+  temp <- aggregate(data_sommer$sykdom[data_sommer$mor == 1 & data_sommer$lam == ''], by=list(data_sommer$søye[data_sommer$mor == 1 & data_sommer$lam == '']), mean)
+  temp$x[temp$x > 0] <- 1
+  sykdom_søye_sommer <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
   # søye u lam
   
+  if (nrow(data_sommer[data_sommer$mor == 0,]) > 0){
   temp <- aggregate(data_sommer$gaupe[data_sommer$mor == 0 & data_sommer$lam == ''], by=list(data_sommer$søye[data_sommer$mor == 0 & data_sommer$lam == '']), mean)
   temp$x[temp$x > 0] <- 1
   gaupe_søye_u_lam_sommer <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
@@ -484,6 +504,23 @@ if (length(data_sommer$søye[data_sommer$mor == 1 & data_sommer$lam == ''])>0) {
   temp <- aggregate(data_sommer$ulykke[data_sommer$mor == 0 & data_sommer$lam == ''], by=list(data_sommer$søye[data_sommer$mor == 0 & data_sommer$lam == '']), mean)
   temp$x[temp$x > 0] <- 1
   ulykke_søye_u_lam_sommer <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])
+  temp <- aggregate(data_sommer$sykdom[data_sommer$mor == 0 & data_sommer$lam == ''], by=list(data_sommer$søye[data_sommer$mor == 0 & data_sommer$lam == '']), mean)
+  temp$x[temp$x > 0] <- 1
+  sykdom_søye_u_lam_sommer <- sum(aggregate(temp$x, by=list(temp$Group.1), mean)[2])  
+  } else {
+    gaupe_søye_u_lam_sommer <- 0
+    jerv_søye_u_lam_sommer <- 0
+    bjørn_søye_u_lam_sommer <- 0
+    ulv_søye_u_lam_sommer <- 0
+    ørn_søye_u_lam_sommer <- 0
+    rev_søye_u_lam_sommer <- 0
+    ukjent_rovvilt_søye_u_lam_sommer <- 0
+    ukjent_søye_u_lam_sommer <- 0
+    annet_søye_u_lam_sommer <- 0
+    ulykke_søye_u_lam_sommer <- 0
+    sykdom_søye_u_lam_sommer <- 0  
+  }
+ 
 } else{
   gaupe_søye_sommer <- 0
   jerv_søye_sommer <- 0
@@ -495,6 +532,7 @@ if (length(data_sommer$søye[data_sommer$mor == 1 & data_sommer$lam == ''])>0) {
   ukjent_søye_sommer <- 0
   annet_søye_sommer <- 0
   ulykke_søye_sommer <- 0
+  sykdom_søye_sommer <- 0
   gaupe_søye_u_lam_sommer <- 0
   jerv_søye_u_lam_sommer <- 0
   bjørn_søye_u_lam_sommer <- 0
@@ -505,32 +543,44 @@ if (length(data_sommer$søye[data_sommer$mor == 1 & data_sommer$lam == ''])>0) {
   ukjent_søye_u_lam_sommer <- 0
   annet_søye_u_lam_sommer <- 0
   ulykke_søye_u_lam_sommer <- 0
-}
-
-
-
-# sykdom sommer
-
-sum(aggregate(data_sommer$sykdom[data_sommer$mor == 1], by=list(data_sommer$søye), sum)[2])
-sykdom_søye_sommer <- sum(data_sommer$sykdom[data_sommer$lam == '' & data_sommer$mor == 1]) # må fikse så bare unique
-#sykdom_søye_u_lam_sommer <- sum(data_sommer$sykdom[grep('0', data_sommer$mor)])
-
-
-if (length(data_sommer$sykdom[data_sommer$mor == 0]) > 0){
-  sykdom_søye_u_lam_sommer <- sum(aggregate(data_sommer$sykdom[data_sommer$mor == 0], by=list(data_sommer$søye[data_sommer$mor == 0]), sum)[2])
+  sykdom_søye_u_lam_sommer <- 0
+}  
 } else{
-  sykdom_søye_u_lam_sommer <-0
+  gaupe_lam_sommer <- 0
+  jerv_lam_sommer <- 0
+  bjørn_lam_sommer <- 0
+  ulv_lam_sommer <- 0
+  ørn_lam_sommer <- 0
+  rev_lam_sommer <- 0
+  ukjent_rovvilt_lam_sommer <- 0
+  ukjent_lam_sommer <- 0
+  annet_lam_sommer <- 0
+  ulykke_lam_sommer <- 0
+  sykdom_lam_sommer <- 0
+  gaupe_søye_sommer <- 0
+  jerv_søye_sommer <- 0
+  bjørn_søye_sommer <- 0
+  ulv_søye_sommer <- 0
+  ørn_søye_sommer <- 0
+  rev_søye_sommer <- 0
+  ukjent_rovvilt_søye_sommer <- 0
+  ukjent_søye_sommer <- 0
+  annet_søye_sommer <- 0
+  ulykke_søye_sommer <- 0
+  sykdom_søye_sommer <- 0
+  gaupe_søye_u_lam_sommer <- 0
+  jerv_søye_u_lam_sommer <- 0
+  bjørn_søye_u_lam_sommer <- 0
+  ulv_søye_u_lam_sommer <- 0
+  ørn_søye_u_lam_sommer <- 0
+  rev_søye_u_lam_sommer <- 0
+  ukjent_rovvilt_søye_u_lam_sommer <- 0
+  ukjent_søye_u_lam_sommer <- 0
+  annet_søye_u_lam_sommer <- 0
+  ulykke_søye_u_lam_sommer <- 0
+  sykdom_søye_u_lam_sommer <- 0
 }
 
-
-
-sykdom_lam_sommer <- sum(data_sommer$sykdom[grep(lam_siffer, data_sommer$lam)])
-
-# ulykke
-
-ulykke_søye_sommer <- sum(data_sommer$ulykke[data_sommer$lam == '' & data_sommer$mor == 1])
-ulykke_søye_u_lam_sommer <- sum(data_sommer$ulykke[grep('0', data_sommer$mor)])
-ulykke_lam_sommer <- sum(data_sommer$ulykke[grep(lam_siffer, data_sommer$lam)])
 
 gaupe_totalt <- gaupe_lam + gaupe_søye + gaupe_søye_u_lam
 jerv_totalt <- jerv_lam + jerv_søye + jerv_søye_u_lam
@@ -553,7 +603,10 @@ fredet_rovvilt_søye_u_lam_sommer <- gaupe_søye_u_lam_sommer + jerv_søye_u_lam
 
 data$fredet_rovvilt <- data$gaupe + data$jerv + data$bjørn + data$ulv + data$ørn
 
-totalt_tap_lam <- sum(aggregate(data$tapt, by=list(data$lam), sum)[2])
+temp <- aggregate(data$tapt, by=list(data$lam), mean)
+temp$x[temp$x > 0] <- 1
+totalt_tap_lam <- sum(aggregate(temp$x, by = list(temp$Group.1),mean)[2])
+
 temp <- aggregate(data$tapt, by=list(data$søye), mean)
 temp$x[temp$x > 0] <- 1
 totalt_tap_søye <- sum(aggregate(temp$x, by = list(temp$Group.1),mean)[2])
@@ -565,6 +618,9 @@ totalt_tap_søye_uten_lam <- sum(aggregate(temp$x, by = list(temp$Group.1),mean)
 temp <- aggregate(data$tapt[data$mor == 1 & data$lam == ''], by=list(data$søye[data$mor == 1 & data$lam == '']), mean)
 temp$x[temp$x > 0] <- 1
 totalt_tap_søye_med_lam <- sum(aggregate(temp$x, by = list(temp$Group.1),mean)[2])
+
+data$lam_tapt <- 0
+data$lam_tapt[data$temp == 1 & data$tapt == 1] <- 1
 
 # antall søyer med og uten lam
 søye_med_lam <- sum(aggregate(data$mor, by=list(data$søye), mean)[2])
@@ -580,24 +636,21 @@ temp <- aggregate(data$kopplam_tapt, by=list(data$søye), sum)
 colnames(temp) <- c('søye', 'kopplam_tapt_per_søye')
 data <- merge(data, temp, by=c('søye'))
 
-
-data$lam_tapt <- 0
-data$lam_tapt[data$temp == 1 & data$tapt == 1] <- 1
-
-temp <- aggregate(data$lam_tapt, by=list(data$lam),mean)
-temp$x[temp$x > 0] <- 1
-
-antall_lam_tapt <- sum(temp$x)
-
 temp <- aggregate(data$lam_tapt, by=list(data$søye), sum)
 colnames(temp) <- c('søye', 'lam_tapt_per_søye')
 data <- merge(data, temp, by=c('søye'))
 
+# søsken kopplam tapt
+
 data$søsken_kopplam_tapt <- 0
-data$søsken_kopplam_tapt <- data$lam_tapt_per_søye - data$kopplam_tapt_per_søye
+data$søsken_kopplam_tapt[data$kopplam_tapt_per_søye > 0] <- data$lam_tapt_per_søye[data$kopplam_tapt_per_søye > 0]
 data$søsken_kopplam_tapt[data$antall_kopplam_søye < 1] <- 0
 
 antall_søsken_tapt <- sum(aggregate(data$søsken_kopplam_tapt, by=list(data$søye), sum)[2])
+
+pros_søsken_kopplam_tapt <- round((antall_søsken_tapt/antall_søsken_kopplam)*100,1)
+
+# ettåringer tapt
 
 data$ettåring_tapt <- 0
 data$ettåring_tapt[data$tapt == 1 & data$ettåring == 1 & data$lam == ''] <- 1
@@ -620,7 +673,7 @@ antall_lam_i_tre_pluss_kull_tapt <- sum(data$tapt[data$`antall lam` >= 3])
 pros_lam_3_kull_tapt <- round((antall_lam_i_tre_pluss_kull_tapt/antall_lam_i_tre_pluss_kull)*100,1)
 pros_ettåringer_tapt <- round((antall_ettåring_tapt/antall_ettåringer)*100,1)
 pros_kopplam_tapt <- round((antall_kopplam_tapt/kopplam)*100,1)
-pros_lam_tapt <- round((antall_lam_tapt/lam)*100,1)
+pros_lam_tapt <- round((totalt_tap_lam/lam)*100,1)
 
 beskrivelse <- c('Tapt morsøye - gaupe', 'Tapt søye u/lam - gaupe','Tapt lam - gaupe','',
                  'Tapt morsøye - jerv', 'Tapt søye u/lam - jerv','Tapt lam - jerv', '',
@@ -637,7 +690,7 @@ beskrivelse <- c('Tapt morsøye - gaupe', 'Tapt søye u/lam - gaupe','Tapt lam -
                  'Totalt tap morsøye','Totalt tap søye u/lam','Totalt tap lam','',
                  '','Antall sau totalt', 'Antall søyer med lam', 'Antall søyer uten lam','Antall lam','Prosent lam tapt', 'Antall kopplam', 'Antall fosterlam', '',
                  'antall lam i 3+ kull', 'antall lam i 3+ kull tapt', 'Prosent lam i 3+ kull tapt','',
-                 'Antall kopplam tapt', 'Prosent kopplam tapt', 'Antall søsken av kopplam tapt', '',
+                 'Antall kopplam tapt', 'Prosent kopplam tapt', 'Antall søsken kopplam','Antall søsken av kopplam tapt', 'Prosent søsken kopplam tapt','',
                  'Antall ettåringer', 'Antall ettåringer tapt', 'Prosent ettåringer tapt', 'Antall lam ettåringer',  'Antall lam av ettåringer tapt', 'Prosent lam tapt ettåringer')
 
 
@@ -656,7 +709,7 @@ antall <- c(gaupe_søye, gaupe_søye_u_lam,gaupe_lam, '',
             totalt_tap_søye_med_lam, totalt_tap_søye_uten_lam, totalt_tap_lam,'',
             '',totalt_antall, søye_med_lam, søye_uten_lam,lam, pros_lam_tapt, kopplam, fosterlam, '',
             antall_lam_i_tre_pluss_kull, antall_lam_i_tre_pluss_kull_tapt, pros_lam_3_kull_tapt, '',
-            antall_kopplam_tapt,pros_kopplam_tapt, antall_søsken_tapt, '',
+            antall_kopplam_tapt,pros_kopplam_tapt, antall_søsken_kopplam, antall_søsken_tapt, pros_søsken_kopplam_tapt,'',
             antall_ettåringer, antall_ettåring_tapt,pros_ettåringer_tapt, antall_lam_ettåring, antall_lam_tapt_ettåring, pros_lam_tapt_ettåring)
 
 sommer <- c(gaupe_søye_sommer, gaupe_søye_u_lam_sommer,gaupe_lam_sommer, '',
@@ -674,7 +727,7 @@ sommer <- c(gaupe_søye_sommer, gaupe_søye_u_lam_sommer,gaupe_lam_sommer, '',
             '','','','',
             '','', '', '','', '', '', '','',
             '', '','', '',
-            '', '', '', '',
+            '', '', '', '', '', '',
             '', '','', '', '','')
 
 
